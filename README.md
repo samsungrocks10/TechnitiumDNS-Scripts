@@ -44,7 +44,7 @@ Invalid or incomplete rows (e.g., missing MAC address) are skipped.
 
 1. **Run the Script**
    ```bash
-   python3 dns_import_csv.py
+   python3 ImportDHCP.py
    ```
 
 2. **Follow the Prompts**
