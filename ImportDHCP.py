@@ -2,12 +2,14 @@ import requests
 import csv
 import os
 import sys
+import ipaddress
 from getpass import getpass
+
 
 def login(base_url, username, password):
     response = requests.post(
-        f"{base_url}/api/login",
-        json={"userName": username, "password": password}
+        f"{base_url}/api/user/login",
+        params={"user": username, "pass": password}
     )
     if response.status_code == 200 and response.json().get("status") == "ok":
         return response.json().get("token")
@@ -26,11 +28,11 @@ def delete_all_reservations(base_url, token, scope_name):
     reservations = get_reserved_leases(base_url, token, scope_name)
     for res in reservations:
         requests.get(
-            f"{base_url}/api/dhcp/scopes/deleteReservedLease",
+            f"{base_url}/api/dhcp/scopes/removeReservedLease",
             params={
                 "token": token,
                 "name": scope_name,
-                "ipAddress": res.get("ipAddress")
+                "hardwareAddress": res.get("hardwareAddress")
             }
         )
     print(f"Cleared all reservations in scope {scope_name}.")
@@ -38,13 +40,14 @@ def delete_all_reservations(base_url, token, scope_name):
 
 def get_reserved_leases(base_url, token, scope_name):
     response = requests.get(
-        f"{base_url}/api/dhcp/scopes/listReservedLeases",
+        f"{base_url}/api/dhcp/scopes/get",
         params={"token": token, "name": scope_name}
     )
     response.raise_for_status()
-    return response.json().get("response", [])
+    leases = response.json().get("response", [])
+    return leases['reservedLeases']
 
-def read_reservations(csv_path):
+def read_reservations(csv_path, subnet):
     reservations = []
     with open(csv_path.strip("'\""), 'r', encoding='utf-8-sig') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -58,7 +61,11 @@ def read_reservations(csv_path):
                     "ipAddress": ip,
                     "hostName": name
                 })
-    return reservations
+    filtered_reservations = [
+        device for device in reservations
+        if ipaddress.ip_address(device['ipAddress']) in subnet
+    ]
+    return filtered_reservations
 
 def add_reserved_lease(base_url, token, scope_name, lease):
     params = {
@@ -84,18 +91,21 @@ def main():
 
     token = login(base_url, username, password)
 
-    scopes = get_dhcp_scopes(base_url, token)
+    scopes = get_dhcp_scopes(base_url, token)['scopes']
     if not scopes:
         print("No DHCP scopes found.")
         sys.exit(1)
 
     print("\nAvailable DHCP Scopes:")
     for i, scope in enumerate(scopes, start=1):
-        print(f"  [{i}] {scope['name']} ({scope['subnet']}/{scope['subnetMask']})")
+        print(f"  [{i}] {scope['name']} ({scope['networkAddress']}/{scope['subnetMask']})")
 
     selected = int(input("Select a scope number to update: ").strip()) - 1
     scope = scopes[selected]
     scope_name = scope["name"]
+    subnet = scope['networkAddress'], '/', scope['subnetMask']
+    subnet = ipaddress.ip_network("".join(subnet))
+    
     print(f"Selected Scope: {scope_name}")
 
     choice = input("Do you want to delete all existing reservations first? (yes/no): ").strip().lower()
@@ -107,7 +117,7 @@ def main():
         current = get_reserved_leases(base_url, token, scope_name)
         print(f"{len(current)} existing reservations will remain.")
 
-    reservations = read_reservations(csv_path)
+    reservations = read_reservations(csv_path, subnet)
     print(f"Parsed {len(reservations)} valid reservations from CSV\n")
 
     print(f"Updating reservations in scope: {scope_name}")
