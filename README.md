@@ -18,7 +18,7 @@ This Python script imports static DHCP reservations into your [Technitium DNS Se
 ## Requirements
 
 - Python 3.x
-- No external dependencies (only uses standard `requests`, `csv`, `getpass`)
+- No external dependencies (only uses standard `requests`, `csv`, `getpass`, `ipaddress`)
 
 ---
 
